@@ -144,7 +144,7 @@ N_of_Col <- length(gelFiles) + 1
 F_bound <- matrix(nrow=15, ncol=N_of_Col)
 F_bound[, N_of_Col] <- Conc.
 
-# image processing and binding data output: has to be inspect and "band_division" may need adjustment
+# image processing and binding data output: has to be inspected and "band_division" may need adjustment
 band_division <- rep(200, length(gelFiles))
 j=0
 for (g in gelFiles) {
