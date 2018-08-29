@@ -1,0 +1,199 @@
+---
+title: "R script for quantitative fluorescence EMSA gel image process and data fitting"
+author: Qremanei
+Date: April 16, 2015
+output:
+  md_document:
+    variant: markdown_github
+---
+
+R script for quantitative fluorescence EMSA gel image process and data fitting 
+==============================================================================================
+
+This script does three things:
+
+1) read in multiple EMSA gel images:  
+    a. 15-lane BioRad mini Protean gel images in "dir1" file folder  
+    b. pre-requirement: crop the gel image to only keep the minimum rectangle region with all bands  
+
+2) process image information to pixel information that can be used for plotting  
+
+3) estimate binding association constant, Ka, using quadratic function and plot the data  
+
+### 1) read gel images
+===========================================================================
+
+```{r, eval=FALSE}
+# set to the directory where processed gel images are
+dir1 = "~EMSA/processed_gel_images/"
+dir2 = "~EMSA/output/"
+```
+
+
+```{r, eval=FALSE}
+# save the the image names, read the file names and store them in "gelFiles"
+imageFiles <- list.files(path=dir1)
+write(imageFiles, paste(dir2,"file_names.txt", sep=""))
+conn <- file(paste(dir2,"file_names.txt", sep=""), 'r')
+gelFiles = readLines(conn)
+close(conn)
+```
+
+### 2) a collection of related functions and R libraries
+===========================================================================
+
+```{r, eval=FALSE}
+library(EBImage) # for image processing
+```
+
+
+The algorithm of gel image processing is basically doing three things:  
+
+  Step 1: slice the imge into individual lanes  
+  Step 2: extract raw intensity signal for each lane  
+  Step 3: calculate the background intensity data and substract it from teh raw intensity signal  
+  Step 4: get the intensity ratio of bound protein-DNA complex verse total DNA  
+
+
+```{r, eval=FALSE}
+# a function for transforming a gel image to a ratio number representing fraction bound
+# the function returns a vector of length 15 storing fraction bound of each lane
+processEMSA <- function(EMSAgel, peak_division) {
+  
+  # set up initial parameter for slicing the gel image
+  w=dim(EMSAgel)[1]/15
+  w2=1*w/2
+  w3=1*w/3
+  x=0
+  
+  # initiate a numeric vector of length 15 to store the data
+  Frac_bound <- numeric(15)
+  # set up the plot region
+  par(mfrow=c(15, 2), mar=c(.1, 6, .1, 6), pch=20)
+  
+  # process the image lane by lane
+  for(l in 1:15){
+   
+    # slice the gel image using the middle region of each lane
+    sub=EMSAgel[(x+w2):(x+w-w3),]
+    x=x+w
+    # transform and transpose the image so that rows are the intensities
+    s=matrix(sub, ncol=dim(sub)[1], byrow=T)
+    
+    # raw intensity data without background correction: mean intensity of each row
+    m=apply(s, 1, mean)
+    b <- 1:dim(sub)[2]
+    plot(b, m)
+
+    # calculate the background signal using the signals in between two bands
+    m_bg = mean(m[(peak_division-25):(peak_division+25)])
+    d = sd(m[(peak_division-25):(peak_division+25)])
+    segments(0, m_bg, dim(EMSAgel)[2], m_bg, col=4)
+    
+    # remove background noise: assume mean is normally distributed,
+    # and use p-value >= 0.025 to call the signal at background level and set the level to zero
+    # otherwise, call it above background and remove the background signal
+    m1 <- ifelse (pnorm(m, m_bg, d) <= 0.975, 0, m - m_bg)
+    plot(b, m1)
+
+    ##calcuate the total intensity and the intensity of the first peak
+    I_total = sum(m1)
+    I_1stPeak = sum(m1[1:peak_division])
+    Frac_bound[l] = I_1stPeak/I_total
+  }
+  
+  return(Frac_bound)
+}
+```
+
+
+```{r, eval=FALSE}
+# nonlinear fitting to a quadratic binding model and plot the orignal data
+nls_fit_quadratic <- function(dataset, colNum, DNA_probe, protConc., dnaConc.) {
+  X = protConc.
+  Y = dataset[, colNum]
+  DNA_t = dnaConc.
+  
+  # the starting initial values may need adjustment
+  motif_fit_quadratic.nls = nls(Y ~ b0 + b1*((DNA_t+1/KA+X) - sqrt((DNA_t+1/KA+X)^2-4*DNA_t*X))/2*DNA_t,
+                                start = c(b0=0, b1=100, KA=10000))
+  sum_fit <- summary(motif_fit_quadratic.nls)
+  print(sum_fit)
+  
+  plot(X, Y, log="x", col="blue", pch=19, ylim=c(0, 1),
+       xlab="log DNA Conc.", ylab=paste("Fraction Bound ", "(", DNA_probe, ")", sep=""))
+  y1 = predict(motif_fit_quadratic.nls, data.frame(X = Conc._x))
+  points(Conc._x, y1, log="x", col="red", pch=20, cex=.3)
+}
+```
+
+### 3) plotting and data fitting workflow:
+===========================================================================
+
+```{r, eval=FALSE}
+# protein concentrations used in the assay: the unit is nM
+Conc. <- c(0, 1250/2^11, 1250/2^10, 1250/2^9, 1250/2^8, 1250/2^7, 
+           1250/2^6, 1250/2^5, 1250/2^4, 1250/2^3, 1250/2^2, 1250/2^1, 1250, 2500, 5000)
+prot_vart <- "proteinName"
+```
+
+
+```{r, fig.width=5, fig.height=8, warning=FALSE, fig.align='center', eval=FALSE}
+# set up the data storage matrix
+N_of_Col <- length(gelFiles) + 1
+F_bound <- matrix(nrow=15, ncol=N_of_Col)
+F_bound[, N_of_Col] <- Conc.
+
+# image processing and binding data output: has to be inspect and "band_division" may need adjustment
+band_division <- rep(200, length(gelFiles))
+j=0
+for (g in gelFiles) {
+  j=j+1
+  gel = readImage(paste(dir, g, sep=""))
+  gel_n=normalize(gel)
+  print(paste("Image process for file", g, sep=": "))
+  F_bound[, j] <- processEMSA(gel_n, band_division[j])
+}
+
+# name the columns accordingly
+motifs <- c("DNA1", "DNA2", "Conc.")
+colnames(F_bound) <- motifs
+F_bound
+write.table(F_bound, file=paste(dir, prot_vart, "_fraction_bound.txt", sep=""), sep="\t")
+```
+
+
+```{r, fig.width=5, fig.height=5, warning=FALSE, fig.align='center', eval=FALSE}
+# concentrations for nonlinear model fitting of the data
+Conc._x <- c(seq(0.001, 10, 0.0025), seq(10.01, 5100, 0.1))
+Conc._DNA <- 2.5
+
+# plot individual images and print out fitted parameters
+par(mfrow=c(2, round(length(gelFiles)/2+0.1, 0)), mar=c(4,4,1,1))
+for (i in 1:length(gelFiles)) {
+  tryCatch({
+    
+    print(paste("nonlinear fit of", i, ":", motifs[i]))
+    nls_fit_quadratic(F_bound, i, motifs[i], Conc., Conc._DNA)
+    
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
