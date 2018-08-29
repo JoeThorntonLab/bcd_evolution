@@ -49,7 +49,7 @@ with(t8mer, {
 })
 
 ########################
-load("~/Documents/Bcd_binding_manuscript/graphs_code/kmer.6.RData")
+load("kmer.6.RData")
 head(kmer.6)
 kmer.6[1,]
 dim(kmer.6)
