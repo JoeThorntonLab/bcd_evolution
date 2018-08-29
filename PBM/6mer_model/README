@@ -1,1 +1,3 @@
 6mer model
+
+The work here is largely based on BEEML model developed by Stormo Lab. Please check http://stormo.wustl.edu/beeml/ for more reference. PBM_util.R and code.R are mostly kept unchanged from BEEML-PBM program.
